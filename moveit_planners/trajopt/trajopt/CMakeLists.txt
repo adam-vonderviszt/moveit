@@ -7,6 +7,7 @@ find_package(catkin REQUIRED COMPONENTS
   trajopt_sco
   trajopt_utils
   roscpp
+  moveit_core
 )
 
 find_package(Eigen3 REQUIRED)
@@ -41,6 +42,7 @@ set(TRAJOPT_SOURCE_FILES
     src/trajectory_costs.cpp
     src/kinematic_terms.cpp
     src/problem_description.cpp
+    src/collision_terms.cpp
     src/utils.cpp
 )
 

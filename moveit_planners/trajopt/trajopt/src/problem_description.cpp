@@ -49,6 +49,7 @@
 
 #include <trajopt/trajectory_costs.hpp>
 #include <trajopt/kinematic_terms.h>
+#include <trajopt/collision_terms.h>
 #include "trajopt/problem_description.h"
 
 /**
@@ -544,6 +545,35 @@ void JointVelTermInfo::addObjectiveTerms(TrajOptProblem& prob)
   else
   {
     ROS_WARN("JointVelTermInfo does not have a valid term_type defined. No cost/constraint applied");
+  }
+}
+
+void CollisionTermInfo::addObjectiveTerms(TrajOptProblem& prob)
+{
+  unsigned int n_dof = prob.GetNumDOF();
+  const robot_state::JointModelGroup* joint_model_group = prob.GetPlanningScene()->getRobotModel()->getJointModelGroup(prob.GetPlanningGroupName());
+
+  if (term_type == TT_COST)
+  {
+    for (int i = first_step; i <= last_step; ++i)
+    {
+      prob.addCost(sco::CostPtr(new trajopt::CollisionCost(prob.GetPlanningScene(),
+                                                  joint_model_group,
+                                                  dist_pen[i-first_step], coeffs[i-first_step],
+                                                  prob.GetVarRow(i, 0, n_dof))));
+      prob.getCosts().back()->setName((boost::format("%s_%i") % name.c_str() % i).str());
+    }
+  }
+  else
+  {
+    for (int i = first_step; i <= last_step; ++i)
+    {
+      prob.addIneqConstraint(sco::ConstraintPtr(new trajopt::CollisionConstraint(prob.GetPlanningScene(),
+                                                                        joint_model_group,
+                                                                        dist_pen[i-first_step], coeffs[i-first_step],
+                                                                        prob.GetVarRow(i, 0, n_dof))));
+      prob.getIneqConstraints().back()->setName((boost::format("%s_%i") % name.c_str() % i).str());
+    }
   }
 }
 

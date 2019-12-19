@@ -118,26 +118,44 @@ bool TrajOptInterface::solve(const planning_scene::PlanningSceneConstPtr& planni
 
   ROS_INFO(" ======================================= Create ProblemInfo");
   trajopt::ProblemInfo problem_info(planning_scene, req.group_name);
-
   setProblemInfoParam(problem_info);
 
   ROS_INFO(" ======================================= Populate init info, hard-coded");
-  // TODO: init info should be defined by user. To this end, we need to add seed trajectories to MotionPlanRequest.
-  // JOINT_INTERPOLATED: data is the current joint values
-  // GIVEN_TRAJ: data is the joint values of the current state copied to all timesteps
-  Eigen::VectorXd current_joint_values_eigen(dof);
-  for (int joint_index = 0; joint_index < dof; ++joint_index)
+  // For type JOINT_INTERPOLATED, we need the configuration of the robot at one state (which should be the goal), we do
+  // not need the robot configuration along the whole trajectory. That is why we need one index which is 0 for
+  // "points[]"
+  if (req.goal_constraints[0].joint_constraints.empty())
   {
-    current_joint_values_eigen(joint_index) = current_joint_values[joint_index];
+    ROS_ERROR_STREAM_NAMED("trajopt_planner", "No joint constraints specified!");
+    res.error_code.val = moveit_msgs::MoveItErrorCodes::INVALID_GOAL_CONSTRAINTS;
+    return false;
   }
 
   if (problem_info.init_info.type == trajopt::InitInfo::JOINT_INTERPOLATED)
   {
-    problem_info.init_info.data = current_joint_values_eigen;
+    Eigen::VectorXd initial_joint_values_eigen(dof);
+    for (auto joint_constraint : req.goal_constraints[0].joint_constraints)
+    {
+      initial_joint_values_eigen(joint_model_group->getVariableGroupIndex(joint_constraint.joint_name)) =
+          joint_constraint.position;
+    }
+    problem_info.init_info.data = initial_joint_values_eigen;
   }
   else if (problem_info.init_info.type == trajopt::InitInfo::GIVEN_TRAJ)
   {
-    problem_info.init_info.data = current_joint_values_eigen.transpose().replicate(problem_info.basic_info.n_steps, 1);
+    int num_steps = problem_info.basic_info.n_steps;
+    trajopt::TrajArray init_traj;
+    init_traj.resize(num_steps, dof);
+    for (std::size_t step = 0; step < num_steps; ++step)
+    {
+      for (std::size_t joint_index = 0; joint_index < dof; ++joint_index)
+      {
+        init_traj(step, joint_index) =
+            req.reference_trajectories[0].joint_trajectory[0].points[step].positions[joint_index];
+      }
+    }
+
+    problem_info.init_info.data = init_traj;
   }
 
   ROS_INFO(" ======================================= Create Constraints");
@@ -215,6 +233,16 @@ bool TrajOptInterface::solve(const planning_scene::PlanningSceneConstPtr& planni
   {
     // TODO: Add visibility constraint
   }
+
+  ROS_INFO(" ======================================= Collision Constraints");
+  trajopt::CollisionTermInfoPtr collision_term(new trajopt::CollisionTermInfo);
+  collision_term->first_step = 0;
+  collision_term->last_step = problem_info.basic_info.n_steps - 1;
+  collision_term->coeffs = std::vector<double>(problem_info.basic_info.n_steps, 10.0);
+  collision_term->dist_pen = std::vector<double>(problem_info.basic_info.n_steps, 0.01);
+  collision_term->name = "collision_term";
+  collision_term->term_type = trajopt::TT_CNT;
+  problem_info.cnt_infos.push_back(collision_term);
 
   ROS_DEBUG_STREAM_NAMED(name_, "trajopt_param.improve_ratio_threshold: " << params_.improve_ratio_threshold);
   ROS_DEBUG_STREAM_NAMED(name_, "trajopt_param.min_trust_box_size: " << params_.min_trust_box_size);

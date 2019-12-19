@@ -52,6 +52,9 @@ MOVEIT_CLASS_FORWARD(CartPoseTermInfo);
 struct JointVelTermInfo;
 MOVEIT_CLASS_FORWARD(JointVelTermInfo);
 
+struct CollisionTermInfo;
+MOVEIT_CLASS_FORWARD(CollisionTermInfo);
+
 struct ProblemInfo;
 TrajOptProblemPtr ConstructProblem(const ProblemInfo&);
 
@@ -244,6 +247,11 @@ public:
     has_time = tmp;
   }
 
+  std::string GetPlanningGroupName()
+  {
+    return planning_group_;
+  }
+
 private:
   /** @brief If true, the last column in the optimization matrix will be 1/dt */
   bool has_time;
@@ -357,6 +365,40 @@ struct JointVelTermInfo : public TermInfo
   static TermInfoPtr create()
   {
     TermInfoPtr out(new JointVelTermInfo());
+    return out;
+  }
+};
+
+/**
+ \brief Collision penalty
+   Distrete-time penalty:
+
+  \f{align*}{
+    cost = \sum_{t=0}^{T-1} \sum_{A, B} | distpen_t - sd(A,B) |^+
+  \f}
+*/
+struct CollisionTermInfo : public TermInfo
+{
+  /** @brief first_step and last_step are inclusive */
+  int first_step, last_step;
+
+  /** @brief Collision coefficients. */
+  trajopt::DblVec coeffs;
+
+  /** @brief Distance penality. */
+  trajopt::DblVec dist_pen;
+
+  /** @brief Initialize term with it's supported types */
+  CollisionTermInfo() : TermInfo(TT_COST | TT_CNT)
+  {
+  }
+
+  /** @brief Converts term info into cost/constraint and adds it to trajopt problem */
+  void addObjectiveTerms(TrajOptProblem& prob) override;
+
+  static TermInfoPtr create()
+  {
+    TermInfoPtr out(new CollisionTermInfo());
     return out;
   }
 };
